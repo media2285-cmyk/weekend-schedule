@@ -170,8 +170,8 @@ body {
     color: var(--text-muted);
 }
 
-.calendar .day-header:first-child { color: var(--danger); }
-.calendar .day-header:last-child { color: var(--primary); }
+.calendar .day-header:nth-child(6) { color: var(--primary); }
+.calendar .day-header:nth-child(7) { color: var(--danger); }
 
 .calendar .day-cell {
     aspect-ratio: 1;

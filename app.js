@@ -230,8 +230,8 @@ async function submitApplication() {
         }
 
         showToast('신청이 완료되었습니다!', 'success');
-        await loadAllData();
-        renderSubmitComplete(document.getElementById('emp-content'), dates);
+        try { await loadAllData(); } catch (ignore) {}
+        renderSubmitComplete(document.getElementById('emp-content'), [...dates]);
     } catch (e) {
         console.error('신청 실패:', e);
         showToast('신청 실패. 다시 시도하세요.', 'error');
@@ -882,7 +882,7 @@ function renderCalendar(containerId, year, month, selectedDates, onClickDate) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
 
-    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+    const dayNames = ['월', '화', '수', '목', '금', '토', '일'];
     dayNames.forEach(name => {
         const div = document.createElement('div');
         div.className = 'day-header';
@@ -891,10 +891,12 @@ function renderCalendar(containerId, year, month, selectedDates, onClickDate) {
     });
 
     const firstDay = new Date(year, month - 1, 1).getDay();
+    // 월요일 시작: 일(0)→6, 월(1)→0, 화(2)→1 ...
+    const firstDayMon = (firstDay + 6) % 7;
     const daysInMonth = new Date(year, month, 0).getDate();
 
     // 빈 칸
-    for (let i = 0; i < firstDay; i++) {
+    for (let i = 0; i < firstDayMon; i++) {
         const div = document.createElement('div');
         div.className = 'day-cell empty';
         container.appendChild(div);
