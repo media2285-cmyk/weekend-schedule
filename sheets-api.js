@@ -2,12 +2,11 @@
 const SheetsAPI = {
     baseUrl: 'https://sheets.googleapis.com/v4/spreadsheets',
 
-    // 인증 헤더 생성 (토큰 있으면 OAuth, 없으면 API 키)
-    _buildUrl(path, params = {}) {
+    // 인증 파라미터 (토큰 있으면 OAuth, 없으면 API 키)
+    _authParam() {
         const token = this.getToken();
-        if (!token) params.key = CONFIG.API_KEY;
-        const query = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-        return `${this.baseUrl}/${CONFIG.SPREADSHEET_ID}/${path}${query ? '?' + query : ''}`;
+        if (token) return '';
+        return `key=${CONFIG.API_KEY}`;
     },
 
     _headers() {
@@ -17,11 +16,18 @@ const SheetsAPI = {
         return h;
     },
 
+    _addAuth(url) {
+        const auth = this._authParam();
+        if (!auth) return url;
+        return url + (url.includes('?') ? '&' : '?') + auth;
+    },
+
     // 시트 데이터 읽기
     async read(sheetName, range) {
         const fullRange = range ? `${sheetName}!${range}` : sheetName;
-        const url = this._buildUrl(`values/${encodeURIComponent(fullRange)}`);
-        const res = await fetch(url);
+        let url = `${this.baseUrl}/${CONFIG.SPREADSHEET_ID}/values/${encodeURIComponent(fullRange)}`;
+        url = this._addAuth(url);
+        const res = await fetch(url, { headers: this._headers() });
         if (!res.ok) throw new Error(`시트 읽기 실패: ${res.status}`);
         const data = await res.json();
         return data.values || [];
@@ -30,7 +36,8 @@ const SheetsAPI = {
     // 시트 데이터 쓰기
     async write(sheetName, range, values) {
         const fullRange = `${sheetName}!${range}`;
-        const url = this._buildUrl(`values/${encodeURIComponent(fullRange)}`, { valueInputOption: 'USER_ENTERED' });
+        let url = `${this.baseUrl}/${CONFIG.SPREADSHEET_ID}/values/${encodeURIComponent(fullRange)}?valueInputOption=USER_ENTERED`;
+        url = this._addAuth(url);
         const res = await fetch(url, {
             method: 'PUT',
             headers: this._headers(),
@@ -42,10 +49,8 @@ const SheetsAPI = {
 
     // 시트 데이터 추가
     async append(sheetName, values) {
-        const url = this._buildUrl(`values/${encodeURIComponent(sheetName)}:append`, {
-            valueInputOption: 'USER_ENTERED',
-            insertDataOption: 'INSERT_ROWS'
-        });
+        let url = `${this.baseUrl}/${CONFIG.SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+        url = this._addAuth(url);
         const res = await fetch(url, {
             method: 'POST',
             headers: this._headers(),
@@ -58,7 +63,8 @@ const SheetsAPI = {
     // 시트 데이터 삭제 (범위 클리어)
     async clear(sheetName, range) {
         const fullRange = range ? `${sheetName}!${range}` : sheetName;
-        const url = this._buildUrl(`values/${encodeURIComponent(fullRange)}:clear`);
+        let url = `${this.baseUrl}/${CONFIG.SPREADSHEET_ID}/values/${encodeURIComponent(fullRange)}:clear`;
+        url = this._addAuth(url);
         const res = await fetch(url, {
             method: 'POST',
             headers: this._headers()
