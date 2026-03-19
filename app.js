@@ -188,11 +188,17 @@ function renderEmployeeApplication(container) {
         </div>
     `;
 
-    function onDateClick(date) {
-        const idx = selectedDates.indexOf(date);
+    function onDateClick(dateStr) {
+        const idx = selectedDates.indexOf(dateStr);
         if (idx >= 0) selectedDates.splice(idx, 1);
-        else selectedDates.push(date);
-        renderCalendar('emp-calendar', year, month, selectedDates, onDateClick);
+        else selectedDates.push(dateStr);
+        // 클래스만 토글 (전체 다시 그리지 않음)
+        document.querySelectorAll('#emp-calendar .weekend').forEach(cell => {
+            const cellDate = cell.dataset.date;
+            if (cellDate === dateStr) {
+                cell.classList.toggle('selected');
+            }
+        });
         document.getElementById('selected-count').textContent = `선택: ${selectedDates.length}일`;
     }
     renderCalendar('emp-calendar', year, month, selectedDates, onDateClick);
@@ -881,6 +887,7 @@ function renderCalendar(containerId, year, month, selectedDates, onClickDate) {
         if (!isWeekend) div.classList.add('weekday');
         else {
             div.classList.add('weekend');
+            div.dataset.date = dateStr;
             if (dayOfWeek === 0) div.classList.add('sunday');
             if (isSelected) div.classList.add('selected');
             div.addEventListener('click', () => onClickDate(dateStr));
