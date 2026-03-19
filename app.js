@@ -1,12 +1,12 @@
 // ===== 앱 상태 =====
 const App = {
-    role: null,          // 'admin' | 'employee'
-    currentUser: null,   // 직원 이름
-    employees: [],       // 직원 목록
-    settings: { year: null, month: null, status: 'closed' }, // closed | open | assigned | confirmed
-    applications: [],    // [{name, dates: ['2026-03-07', ...]}]
-    assignments: [],     // [{date, name, tag}]  tag: '' | 'empty' | 'conflict' | 'manual'
-    history: [],         // [{name, satCount, sunCount, totalCount}]
+    role: null,
+    currentUser: null,
+    employees: [],
+    settings: { year: null, month: null, status: 'closed' },
+    applications: [],
+    assignments: [],
+    history: [],
 };
 
 // ===== 초기화 =====
@@ -38,12 +38,10 @@ function showLoginScreen() {
                 <p style="color:var(--text-muted); margin-bottom:24px; font-size:0.9rem;">
                     직원은 이름을 선택하고, 담당자는 PIN을 입력하세요.
                 </p>
-                <div id="employee-select-wrap">
-                    <select id="login-employee">
-                        <option value="">이름 선택...</option>
-                    </select>
-                    <button class="btn btn-primary btn-full" onclick="loginAsEmployee()" style="margin-top:4px">직원 입장</button>
-                </div>
+                <select id="login-employee">
+                    <option value="">이름 선택...</option>
+                </select>
+                <button class="btn btn-primary btn-full" onclick="loginAsEmployee()" style="margin-top:4px">직원 입장</button>
                 <div class="login-divider"><span>또는</span></div>
                 <input type="password" id="login-pin" placeholder="담당자 PIN 입력" maxlength="10">
                 <button class="btn btn-outline btn-full" onclick="loginAsAdmin()">담당자 입장</button>
@@ -61,10 +59,7 @@ async function loadInitialData() {
     const loading = document.getElementById('login-loading');
     loading.style.display = 'flex';
     try {
-        // 직원 목록 로드
-        const empData = await SheetsAPI.read(CONFIG.SHEETS.EMPLOYEES, 'A2:A100');
-        App.employees = empData.map(row => row[0]).filter(Boolean);
-
+        App.employees = await SheetsAPI.getEmployees();
         const select = document.getElementById('login-employee');
         App.employees.forEach(name => {
             const opt = document.createElement('option');
@@ -73,13 +68,10 @@ async function loadInitialData() {
             select.appendChild(opt);
         });
 
-        // 설정 로드
-        const settingsData = await SheetsAPI.read(CONFIG.SHEETS.SETTINGS, 'A2:C2');
-        if (settingsData.length > 0) {
-            App.settings.year = parseInt(settingsData[0][0]) || new Date().getFullYear();
-            App.settings.month = parseInt(settingsData[0][1]) || new Date().getMonth() + 1;
-            App.settings.status = settingsData[0][2] || 'closed';
-        }
+        const settings = await SheetsAPI.getSettings();
+        App.settings.year = parseInt(settings.year) || new Date().getFullYear();
+        App.settings.month = parseInt(settings.month) || new Date().getMonth() + 1;
+        App.settings.status = settings.status || 'closed';
     } catch (e) {
         console.error('초기 데이터 로드 실패:', e);
         showToast('데이터 로드 실패. config.js 설정을 확인하세요.', 'error');
@@ -101,20 +93,7 @@ function loginAsAdmin() {
     const pin = document.getElementById('login-pin').value;
     if (pin !== CONFIG.ADMIN_PIN) { showToast('PIN이 올바르지 않습니다.', 'error'); return; }
     App.role = 'admin';
-    authenticateAndShowAdmin();
-}
-
-async function authenticateAndShowAdmin() {
-    try {
-        const tokenValid = await SheetsAPI.checkToken();
-        if (!tokenValid) {
-            await SheetsAPI.authenticate();
-        }
-        showAdminScreen();
-    } catch (e) {
-        console.error('인증 실패:', e);
-        showToast('Google 인증이 필요합니다. 팝업을 허용하세요.', 'error');
-    }
+    showAdminScreen();
 }
 
 // ===== 로그아웃 =====
@@ -142,7 +121,6 @@ async function showEmployeeScreen() {
     `;
 
     await loadAllData();
-
     const container = document.getElementById('emp-content');
 
     if (App.settings.status === 'closed') {
@@ -155,13 +133,7 @@ async function showEmployeeScreen() {
         return;
     }
 
-    if (App.settings.status === 'confirmed') {
-        renderFinalSchedule(container);
-        return;
-    }
-
-    // 신청 가능 상태 (open 또는 assigned)
-    if (App.settings.status === 'assigned') {
+    if (App.settings.status === 'confirmed' || App.settings.status === 'assigned') {
         renderFinalSchedule(container);
         return;
     }
@@ -171,8 +143,8 @@ async function showEmployeeScreen() {
 
 function renderEmployeeApplication(container) {
     const { year, month } = App.settings;
-    const myApp = App.applications.find(a => a.name === App.currentUser);
-    const selectedDates = myApp ? [...myApp.dates] : [];
+    const myDates = App.applications.filter(a => a.name === App.currentUser).map(a => a.date);
+    const selectedDates = [...myDates];
 
     container.innerHTML = `
         <div class="card">
@@ -192,20 +164,13 @@ function renderEmployeeApplication(container) {
         const idx = selectedDates.indexOf(dateStr);
         if (idx >= 0) selectedDates.splice(idx, 1);
         else selectedDates.push(dateStr);
-        // 클래스만 토글 (전체 다시 그리지 않음)
         document.querySelectorAll('#emp-calendar .weekend').forEach(cell => {
-            const cellDate = cell.dataset.date;
-            if (cellDate === dateStr) {
-                cell.classList.toggle('selected');
-            }
+            if (cell.dataset.date === dateStr) cell.classList.toggle('selected');
         });
         document.getElementById('selected-count').textContent = `선택: ${selectedDates.length}일`;
     }
     renderCalendar('emp-calendar', year, month, selectedDates, onDateClick);
-
     document.getElementById('selected-count').textContent = `선택: ${selectedDates.length}일`;
-
-    // 제출 함수를 전역으로 연결
     window._selectedDates = selectedDates;
 }
 
@@ -217,20 +182,8 @@ async function submitApplication() {
     }
 
     try {
-        // 기존 신청 삭제 후 새로 추가
-        const allApps = await SheetsAPI.read(CONFIG.SHEETS.APPLICATIONS, 'A2:B500');
-        const otherApps = allApps.filter(row => row[0] !== App.currentUser);
-        const myRows = dates.map(d => [App.currentUser, d]);
-        const newData = [...otherApps, ...myRows];
-
-        // 클리어 후 다시 쓰기
-        await SheetsAPI.clear(CONFIG.SHEETS.APPLICATIONS, 'A2:B500');
-        if (newData.length > 0) {
-            await SheetsAPI.write(CONFIG.SHEETS.APPLICATIONS, `A2:B${newData.length + 1}`, newData);
-        }
-
+        await SheetsAPI.saveApplication({ name: App.currentUser, dates: [...dates] });
         showToast('신청이 완료되었습니다!', 'success');
-        try { await loadAllData(); } catch (ignore) {}
         renderSubmitComplete(document.getElementById('emp-content'), [...dates]);
     } catch (e) {
         console.error('신청 실패:', e);
@@ -297,7 +250,6 @@ function renderFinalSchedule(container) {
     });
 }
 
-
 // ================================================================
 //  담당자 화면
 // ================================================================
@@ -324,7 +276,6 @@ async function showAdminScreen() {
         </div>
     `;
 
-    // 탭 전환
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -389,11 +340,9 @@ async function openApplications() {
     const year = parseInt(document.getElementById('set-year').value);
     const month = parseInt(document.getElementById('set-month').value);
     try {
-        // 기존 신청/배치 클리어
-        await SheetsAPI.clear(CONFIG.SHEETS.APPLICATIONS, 'A2:B500');
-        await SheetsAPI.clear(CONFIG.SHEETS.ASSIGNMENTS, 'A2:C500');
-        // 설정 업데이트
-        await SheetsAPI.write(CONFIG.SHEETS.SETTINGS, 'A2:C2', [[year, month, 'open']]);
+        await SheetsAPI.clearApplications();
+        await SheetsAPI.clearAssignments();
+        await SheetsAPI.saveSettings({ year, month, status: 'open' });
         App.settings = { year, month, status: 'open' };
         App.applications = [];
         App.assignments = [];
@@ -409,7 +358,7 @@ async function openApplications() {
 
 async function closeApplications() {
     try {
-        await SheetsAPI.write(CONFIG.SHEETS.SETTINGS, 'C2:C2', [['closed']]);
+        await SheetsAPI.saveSettings({ year: App.settings.year, month: App.settings.month, status: 'closed' });
         App.settings.status = 'closed';
         showToast('신청이 마감되었습니다.', 'success');
         renderSettingsTab();
@@ -421,9 +370,9 @@ async function closeApplications() {
 async function resetToClose() {
     if (!confirm('정말 초기화하시겠습니까? 모든 신청/배치 데이터가 삭제됩니다.')) return;
     try {
-        await SheetsAPI.clear(CONFIG.SHEETS.APPLICATIONS, 'A2:B500');
-        await SheetsAPI.clear(CONFIG.SHEETS.ASSIGNMENTS, 'A2:C500');
-        await SheetsAPI.write(CONFIG.SHEETS.SETTINGS, 'C2:C2', [['closed']]);
+        await SheetsAPI.clearApplications();
+        await SheetsAPI.clearAssignments();
+        await SheetsAPI.saveSettings({ year: App.settings.year, month: App.settings.month, status: 'closed' });
         App.settings.status = 'closed';
         App.applications = [];
         App.assignments = [];
@@ -440,14 +389,19 @@ async function resetToClose() {
 // ----- 신청 현황 탭 -----
 function renderStatusTab() {
     const tab = document.getElementById('tab-status');
-    const { year, month, status } = App.settings;
+    const { status } = App.settings;
 
     if (status === 'closed') {
         tab.innerHTML = `<div class="card"><h3>신청 현황</h3><p style="color:var(--text-muted)">신청이 오픈되지 않았습니다.</p></div>`;
         return;
     }
 
-    const appliedNames = [...new Set(App.applications.map(a => a.name))];
+    const appByName = {};
+    App.applications.forEach(a => {
+        if (!appByName[a.name]) appByName[a.name] = [];
+        appByName[a.name].push(a.date);
+    });
+    const appliedNames = Object.keys(appByName);
 
     tab.innerHTML = `
         <div class="card">
@@ -465,7 +419,6 @@ function renderStatusTab() {
         </div>
     `;
 
-    // 직원별 상태
     const list = document.getElementById('emp-status-list');
     App.employees.forEach(name => {
         const done = appliedNames.includes(name);
@@ -475,21 +428,7 @@ function renderStatusTab() {
         list.appendChild(div);
     });
 
-    // 상세 테이블
     const tbody = document.getElementById('app-detail-body');
-    const grouped = {};
-    App.applications.forEach(a => {
-        if (!grouped[a.name]) grouped[a.name] = [];
-        grouped[a.name].push(a.dates);
-    });
-
-    // applications는 [{name, dates}] 형식이므로 재그룹핑
-    const appByName = {};
-    App.applications.forEach(a => {
-        if (!appByName[a.name]) appByName[a.name] = [];
-        appByName[a.name] = a.dates;
-    });
-
     Object.keys(appByName).sort().forEach(name => {
         const dates = appByName[name];
         const tr = document.createElement('tr');
@@ -532,7 +471,6 @@ function renderAssignTab() {
             ` : ''}
         </div>
     `;
-
     renderAssignmentTable();
 }
 
@@ -540,19 +478,13 @@ function renderAssignmentTable() {
     const tbody = document.getElementById('assign-table-body');
     if (!tbody) return;
     tbody.innerHTML = '';
-
     const { year, month } = App.settings;
     const weekends = getWeekends(year, month);
 
-    if (App.assignments.length === 0 && weekends.length > 0) {
+    if (App.assignments.length === 0) {
         weekends.forEach(d => {
             const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${month}/${d.getDate()}</td>
-                <td>${d.getDay() === 0 ? '일' : '토'}</td>
-                <td style="color:var(--text-muted)">배치 전</td>
-                <td></td>
-            `;
+            tr.innerHTML = `<td>${month}/${d.getDate()}</td><td>${d.getDay() === 0 ? '일' : '토'}</td><td style="color:var(--text-muted)">배치 전</td><td></td>`;
             tbody.appendChild(tr);
         });
         return;
@@ -564,7 +496,6 @@ function renderAssignmentTable() {
         const assignment = App.assignments.find(a => a.date === dateStr);
         const currentName = assignment ? assignment.name : '';
         const tag = assignment ? assignment.tag : 'empty';
-
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${month}/${d.getDate()}</td>
@@ -572,9 +503,7 @@ function renderAssignmentTable() {
             <td>
                 <select data-date="${dateStr}" class="assign-select">
                     <option value="">(공란)</option>
-                    ${App.employees.map(name =>
-                        `<option value="${name}" ${name === currentName ? 'selected' : ''}>${name}</option>`
-                    ).join('')}
+                    ${App.employees.map(name => `<option value="${name}" ${name === currentName ? 'selected' : ''}>${name}</option>`).join('')}
                 </select>
             </td>
             <td>
@@ -592,62 +521,49 @@ async function runAutoAssign() {
     const { year, month } = App.settings;
     const weekends = getWeekends(year, month);
 
-    // 근무 이력 로드
-    await loadHistory();
-
+    App.history = await SheetsAPI.getHistory();
     const assignments = [];
+
+    // 날짜별 신청자 맵
+    const appByDate = {};
+    App.applications.forEach(a => {
+        if (!appByDate[a.date]) appByDate[a.date] = [];
+        appByDate[a.date].push(a.name);
+    });
 
     weekends.forEach(d => {
         const dateStr = formatDate(d);
         const dayType = d.getDay() === 0 ? 'sun' : 'sat';
-
-        // 해당 날짜에 신청한 사람 목록
-        const applicants = App.applications
-            .filter(a => a.dates.includes(dateStr))
-            .map(a => a.name);
+        const applicants = appByDate[dateStr] || [];
 
         if (applicants.length === 0) {
             assignments.push({ date: dateStr, name: '', tag: 'empty' });
             return;
         }
-
         if (applicants.length === 1) {
             assignments.push({ date: dateStr, name: applicants[0], tag: '' });
             return;
         }
 
-        // 우선순위 정렬
         const sorted = [...applicants].sort((a, b) => {
             const histA = App.history.find(h => h.name === a) || { satCount: 0, sunCount: 0, totalCount: 0 };
             const histB = App.history.find(h => h.name === b) || { satCount: 0, sunCount: 0, totalCount: 0 };
-
-            // 1순위: 해당 요일 누계 (적은 사람 우선)
             const dayCountA = dayType === 'sat' ? histA.satCount : histA.sunCount;
             const dayCountB = dayType === 'sat' ? histB.satCount : histB.sunCount;
             if (dayCountA !== dayCountB) return dayCountA - dayCountB;
-
-            // 2순위: 전체 누계 (적은 사람 우선)
             if (histA.totalCount !== histB.totalCount) return histA.totalCount - histB.totalCount;
-
-            // 3순위: 랜덤
             return Math.random() - 0.5;
         });
 
-        assignments.push({ date: dateStr, name: sorted[0], tag: applicants.length > 1 ? 'conflict' : '' });
+        assignments.push({ date: dateStr, name: sorted[0], tag: 'conflict' });
     });
 
     App.assignments = assignments;
 
-    // 시트에 저장
     try {
-        await SheetsAPI.clear(CONFIG.SHEETS.ASSIGNMENTS, 'A2:C500');
-        const rows = assignments.map(a => [a.date, a.name, a.tag]);
-        if (rows.length > 0) {
-            await SheetsAPI.write(CONFIG.SHEETS.ASSIGNMENTS, `A2:C${rows.length + 1}`, rows);
-        }
-        await SheetsAPI.write(CONFIG.SHEETS.SETTINGS, 'C2:C2', [['assigned']]);
+        await SheetsAPI.saveAssignments(assignments);
+        await SheetsAPI.saveSettings({ year, month, status: 'assigned' });
         App.settings.status = 'assigned';
-
         showToast('자동 배치가 완료되었습니다.', 'success');
         renderSettingsTab();
         renderAssignTab();
@@ -660,7 +576,6 @@ async function runAutoAssign() {
 async function saveManualAdjust() {
     const selects = document.querySelectorAll('.assign-select');
     const assignments = [];
-
     selects.forEach(sel => {
         const date = sel.dataset.date;
         const name = sel.value;
@@ -669,18 +584,12 @@ async function saveManualAdjust() {
         if (!name) tag = 'empty';
         else if (existing && existing.name !== name) tag = 'manual';
         else if (existing) tag = existing.tag;
-
         assignments.push({ date, name, tag });
     });
-
     App.assignments = assignments;
 
     try {
-        await SheetsAPI.clear(CONFIG.SHEETS.ASSIGNMENTS, 'A2:C500');
-        const rows = assignments.map(a => [a.date, a.name, a.tag]);
-        if (rows.length > 0) {
-            await SheetsAPI.write(CONFIG.SHEETS.ASSIGNMENTS, `A2:C${rows.length + 1}`, rows);
-        }
+        await SheetsAPI.saveAssignments(assignments);
         showToast('수동 조정이 저장되었습니다.', 'success');
         renderAssignTab();
         renderResultTab();
@@ -694,37 +603,24 @@ async function confirmSchedule() {
     if (!confirm('최종 확정하시겠습니까? 확정 후에는 직원들이 근무표를 열람할 수 있습니다.')) return;
 
     try {
-        // 근무 이력 업데이트
-        await loadHistory();
-
-        const { year, month } = App.settings;
-        const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+        App.history = await SheetsAPI.getHistory();
 
         App.assignments.forEach(a => {
             if (!a.name) return;
             const d = new Date(a.date);
             const dayType = d.getDay() === 0 ? 'sun' : 'sat';
-
             let hist = App.history.find(h => h.name === a.name);
             if (!hist) {
                 hist = { name: a.name, satCount: 0, sunCount: 0, totalCount: 0 };
                 App.history.push(hist);
             }
-
             if (dayType === 'sat') hist.satCount++;
             else hist.sunCount++;
             hist.totalCount++;
         });
 
-        // 이력 시트 업데이트
-        await SheetsAPI.clear(CONFIG.SHEETS.HISTORY, 'A2:D500');
-        const histRows = App.history.map(h => [h.name, h.satCount, h.sunCount, h.totalCount]);
-        if (histRows.length > 0) {
-            await SheetsAPI.write(CONFIG.SHEETS.HISTORY, `A2:D${histRows.length + 1}`, histRows);
-        }
-
-        // 상태 변경
-        await SheetsAPI.write(CONFIG.SHEETS.SETTINGS, 'C2:C2', [['confirmed']]);
+        await SheetsAPI.saveHistory(App.history);
+        await SheetsAPI.saveSettings({ year: App.settings.year, month: App.settings.month, status: 'confirmed' });
         App.settings.status = 'confirmed';
 
         showToast('최종 확정되었습니다!', 'success');
@@ -766,7 +662,6 @@ function renderResultTab() {
         </div>
     `;
 
-    // 근무표
     const tbody = document.getElementById('result-table-body');
     const weekends = getWeekends(year, month);
     weekends.forEach(d => {
@@ -788,7 +683,6 @@ function renderResultTab() {
         tbody.appendChild(tr);
     });
 
-    // 이력
     const histBody = document.getElementById('history-table-body');
     App.history.sort((a, b) => b.totalCount - a.totalCount).forEach(h => {
         const tr = document.createElement('tr');
@@ -797,70 +691,34 @@ function renderResultTab() {
     });
 }
 
-
 // ================================================================
 //  데이터 로드 헬퍼
 // ================================================================
 async function loadAllData() {
     try {
-        // 설정
-        const settingsData = await SheetsAPI.read(CONFIG.SHEETS.SETTINGS, 'A2:C2');
-        if (settingsData.length > 0) {
-            App.settings.year = parseInt(settingsData[0][0]) || new Date().getFullYear();
-            App.settings.month = parseInt(settingsData[0][1]) || new Date().getMonth() + 1;
-            App.settings.status = settingsData[0][2] || 'closed';
-        }
+        const [settings, employees, applications, assignments, history] = await Promise.all([
+            SheetsAPI.getSettings(),
+            SheetsAPI.getEmployees(),
+            SheetsAPI.getApplications(),
+            SheetsAPI.getAssignments(),
+            SheetsAPI.getHistory()
+        ]);
 
-        // 직원 목록
-        const empData = await SheetsAPI.read(CONFIG.SHEETS.EMPLOYEES, 'A2:A100');
-        App.employees = empData.map(row => row[0]).filter(Boolean);
-
-        // 신청 현황
-        const appData = await SheetsAPI.read(CONFIG.SHEETS.APPLICATIONS, 'A2:B500');
-        const appMap = {};
-        appData.forEach(row => {
-            const name = row[0], date = row[1];
-            if (!name || !date) return;
-            if (!appMap[name]) appMap[name] = [];
-            appMap[name].push(date);
-        });
-        App.applications = Object.entries(appMap).map(([name, dates]) => ({ name, dates }));
-
-        // 배치 결과
-        const assignData = await SheetsAPI.read(CONFIG.SHEETS.ASSIGNMENTS, 'A2:C500');
-        App.assignments = assignData.map(row => ({
-            date: row[0] || '',
-            name: row[1] || '',
-            tag: row[2] || ''
-        })).filter(a => a.date);
-
-        // 이력
-        await loadHistory();
+        App.settings.year = parseInt(settings.year) || new Date().getFullYear();
+        App.settings.month = parseInt(settings.month) || new Date().getMonth() + 1;
+        App.settings.status = settings.status || 'closed';
+        App.employees = employees;
+        App.applications = applications;
+        App.assignments = assignments;
+        App.history = history;
     } catch (e) {
         console.error('데이터 로드 실패:', e);
     }
 }
 
-async function loadHistory() {
-    try {
-        const histData = await SheetsAPI.read(CONFIG.SHEETS.HISTORY, 'A2:D500');
-        App.history = histData.map(row => ({
-            name: row[0] || '',
-            satCount: parseInt(row[1]) || 0,
-            sunCount: parseInt(row[2]) || 0,
-            totalCount: parseInt(row[3]) || 0
-        })).filter(h => h.name);
-    } catch {
-        App.history = [];
-    }
-}
-
-
 // ================================================================
 //  유틸리티
 // ================================================================
-
-// 해당 월의 주말(토,일) 목록 반환
 function getWeekends(year, month) {
     const result = [];
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -872,12 +730,10 @@ function getWeekends(year, month) {
     return result;
 }
 
-// Date → 'YYYY-MM-DD'
 function formatDate(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// 달력 렌더링
 function renderCalendar(containerId, year, month, selectedDates, onClickDate) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
@@ -891,18 +747,15 @@ function renderCalendar(containerId, year, month, selectedDates, onClickDate) {
     });
 
     const firstDay = new Date(year, month - 1, 1).getDay();
-    // 월요일 시작: 일(0)→6, 월(1)→0, 화(2)→1 ...
     const firstDayMon = (firstDay + 6) % 7;
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    // 빈 칸
     for (let i = 0; i < firstDayMon; i++) {
         const div = document.createElement('div');
         div.className = 'day-cell empty';
         container.appendChild(div);
     }
 
-    // 날짜
     for (let d = 1; d <= daysInMonth; d++) {
         const date = new Date(year, month - 1, d);
         const dayOfWeek = date.getDay();
