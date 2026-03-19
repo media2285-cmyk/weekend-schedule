@@ -231,11 +231,37 @@ async function submitApplication() {
 
         showToast('신청이 완료되었습니다!', 'success');
         await loadAllData();
-        showEmployeeScreen();
+        renderSubmitComplete(document.getElementById('emp-content'), dates);
     } catch (e) {
         console.error('신청 실패:', e);
         showToast('신청 실패. 다시 시도하세요.', 'error');
     }
+}
+
+function renderSubmitComplete(container, dates) {
+    const { year, month } = App.settings;
+    const sorted = [...dates].sort();
+    container.innerHTML = `
+        <div class="card" style="text-align:center; padding:40px 24px;">
+            <h3 style="color:var(--success); margin-bottom:16px;">신청 완료!</h3>
+            <p style="margin-bottom:20px; font-size:0.95rem;">${App.currentUser}님의 ${year}년 ${month}월 근무 희망일</p>
+            <div class="table-wrap" style="max-width:300px; margin:0 auto;">
+                <table>
+                    <thead><tr><th>날짜</th><th>요일</th></tr></thead>
+                    <tbody>
+                        ${sorted.map(d => {
+                            const dt = new Date(d);
+                            const dayName = dt.getDay() === 0 ? '일' : '토';
+                            const color = dt.getDay() === 0 ? 'var(--danger)' : 'var(--primary)';
+                            return `<tr><td>${dt.getMonth()+1}/${dt.getDate()}</td><td style="color:${color}">${dayName}</td></tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <p style="color:var(--text-muted); margin-top:20px; font-size:0.85rem;">총 ${dates.length}일 신청</p>
+            <button class="btn btn-outline" style="margin-top:16px;" onclick="showEmployeeScreen()">다시 수정하기</button>
+        </div>
+    `;
 }
 
 function renderFinalSchedule(container) {
