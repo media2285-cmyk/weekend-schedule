@@ -188,13 +188,14 @@ function renderEmployeeApplication(container) {
         </div>
     `;
 
-    renderCalendar('emp-calendar', year, month, selectedDates, (date) => {
+    function onDateClick(date) {
         const idx = selectedDates.indexOf(date);
         if (idx >= 0) selectedDates.splice(idx, 1);
         else selectedDates.push(date);
-        renderCalendar('emp-calendar', year, month, selectedDates, arguments.callee);
+        renderCalendar('emp-calendar', year, month, selectedDates, onDateClick);
         document.getElementById('selected-count').textContent = `선택: ${selectedDates.length}일`;
-    });
+    }
+    renderCalendar('emp-calendar', year, month, selectedDates, onDateClick);
 
     document.getElementById('selected-count').textContent = `선택: ${selectedDates.length}일`;
 
