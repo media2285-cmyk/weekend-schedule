@@ -367,6 +367,9 @@ async function openApplications() {
         App.assignments = [];
         showToast(`${year}년 ${month}월 신청이 오픈되었습니다.`, 'success');
         renderSettingsTab();
+        renderStatusTab();
+        renderAssignTab();
+        renderResultTab();
     } catch (e) {
         showToast('오픈 실패: ' + e.message, 'error');
     }
@@ -407,7 +410,7 @@ function renderStatusTab() {
     const tab = document.getElementById('tab-status');
     const { year, month, status } = App.settings;
 
-    if (status === 'closed' && App.applications.length === 0) {
+    if (status === 'closed') {
         tab.innerHTML = `<div class="card"><h3>신청 현황</h3><p style="color:var(--text-muted)">신청이 오픈되지 않았습니다.</p></div>`;
         return;
     }
