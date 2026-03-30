@@ -259,19 +259,31 @@ function renderAdminScreen() {
         <div class="card">
             <h3>📋 배치 결과</h3>
             <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">
-                공란은 신청자가 없는 날짜예요. 수동 조정에서 직접 지정할 수 있어요.
+                공란 옆 후보자는 신청했지만 배치되지 못한 직원이에요.
             </p>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>날짜</th><th>근무자</th><th>상태</th></tr></thead>
                     <tbody>
-                        ${App.assignments.map(a => `
-                            <tr>
+                        ${App.assignments.map(a => {
+                            let status = '';
+                            let nameCell = '';
+                            if (a.name) {
+                                status = '<span style="color:var(--success)">배치 완료</span>';
+                                nameCell = a.name;
+                            } else if (a.candidates) {
+                                status = '<span style="color:var(--danger)">공란</span>';
+                                nameCell = `— <span style="font-size:0.8rem; color:var(--text-muted);">후보: ${a.candidates}</span>`;
+                            } else {
+                                status = '<span style="color:var(--danger)">공란</span>';
+                                nameCell = '—';
+                            }
+                            return `<tr>
                                 <td>${formatDateKR(a.date)}</td>
-                                <td>${a.name || '—'}</td>
-                                <td>${a.name ? '<span style="color:var(--success)">배치 완료</span>' : '<span style="color:var(--danger)">공란</span>'}</td>
-                            </tr>
-                        `).join('')}
+                                <td>${nameCell}</td>
+                                <td>${status}</td>
+                            </tr>`;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
