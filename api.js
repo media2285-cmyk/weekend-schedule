@@ -28,5 +28,9 @@ const SheetsAPI = {
     async confirmAssign() {
         const response = await fetch(`${CONFIG.WEB_APP_URL}?action=confirmAssign`);
         return await response.json();
+    },
+    async resetApplications() {
+        const response = await fetch(`${CONFIG.WEB_APP_URL}?action=resetApplications`);
+        return await response.json();
     }
 };
