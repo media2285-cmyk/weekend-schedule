@@ -83,7 +83,8 @@ async function showEmployeeScreen() {
             <h3>${App.settings.year}년 ${App.settings.month}월 신청</h3>
             <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:15px;">희망하는 주말을 모두 선택하세요.</p>
             <div class="calendar" id="calendar-grid"></div>
-            <button class="btn btn-primary btn-full" style="margin-top:20px" onclick="submitRequest()">최종 제출하기</button>
+            <div class="selected-summary" id="selected-summary">선택된 날짜가 없습니다.</div>
+            <button class="btn btn-primary btn-full" style="margin-top:10px" onclick="submitRequest()">최종 제출하기</button>
         </div>
     `;
     renderCalendar('calendar-grid', App.settings.year, App.settings.month, selectedDates);
@@ -111,9 +112,25 @@ function renderCalendar(id, y, m, selected) {
                 cell.classList.toggle('selected');
                 const idx = selected.indexOf(dateStr);
                 idx > -1 ? selected.splice(idx, 1) : selected.push(dateStr);
+                updateSelectedSummary(selected);
             };
         }
         grid.appendChild(cell);
+    }
+}
+
+function updateSelectedSummary(selected) {
+    const summary = document.getElementById('selected-summary');
+    if (!summary) return;
+    if (selected.length === 0) {
+        summary.innerHTML = '선택된 날짜가 없습니다.';
+    } else {
+        const sorted = [...selected].sort();
+        summary.innerHTML = `<span>${selected.length}일 선택됨</span> — ${sorted.map(d => {
+            const date = new Date(d);
+            const dow = ['일','월','화','수','목','금','토'][date.getDay()];
+            return `${date.getMonth()+1}/${date.getDate()}(${dow})`;
+        }).join(', ')}`;
     }
 }
 
