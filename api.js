@@ -20,5 +20,13 @@ const SheetsAPI = {
     async runAutoAssign() {
         const response = await fetch(`${CONFIG.WEB_APP_URL}?action=runAutoAssign`);
         return await response.json();
+    },
+    async saveManualAssign(data) {
+        const response = await fetch(`${CONFIG.WEB_APP_URL}?action=saveManualAssign&data=${encodeURIComponent(JSON.stringify(data))}`);
+        return await response.json();
+    },
+    async confirmAssign() {
+        const response = await fetch(`${CONFIG.WEB_APP_URL}?action=confirmAssign`);
+        return await response.json();
     }
 };
