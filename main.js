@@ -1,247 +1,277 @@
-// ===== 1. 앱 상태 관리 =====
 const App = {
     role: null,
     currentUser: null,
     employees: [],
     settings: { year: null, month: null, status: 'closed' },
     applications: [],
-    assignments: [],
-    history: [],
+    assignments: []
 };
 
-// ===== 2. 초기화 및 유틸리티 =====
-document.addEventListener('DOMContentLoaded', () => {
-    showLoginScreen();
-});
+document.addEventListener('DOMContentLoaded', () => showLoginScreen());
 
-function showToast(msg, type = 'info') {
-    let container = document.querySelector('.toast-container') || document.createElement('div');
-    if (!container.parentElement) {
-        container.className = 'toast-container';
-        document.body.appendChild(container);
-    }
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.textContent = msg;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-}
-
-function logout() {
-    location.reload();
-}
-
-function formatDate(d) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getWeekends(y, m) {
-    const res = [];
-    const last = new Date(y, m, 0).getDate();
-    for (let d = 1; d <= last; d++) {
-        const dt = new Date(y, m - 1, d);
-        if ([0, 6].includes(dt.getDay())) res.push(dt);
-    }
-    return res;
-}
-
-// ===== 3. 데이터 통합 로드 =====
 async function loadAllData() {
-    try {
-        const data = await SheetsAPI.getFullData();
-        if (!data || data.error) return;
-        App.applications = data.applications || [];
-        App.assignments = data.assignments || [];
-        App.history = data.history || [];
+    const data = await SheetsAPI.getFullData();
+    if (data && !data.error) {
         App.employees = data.employees || [];
-        if (data.settings) {
-            App.settings.year = parseInt(data.settings.year);
-            App.settings.month = parseInt(data.settings.month);
-            App.settings.status = data.settings.status;
-        }
-    } catch (e) {
-        console.error("데이터 로드 오류:", e);
+        App.applications = data.applications || [];
+        App.settings = { 
+            year: parseInt(data.settings.year), 
+            month: parseInt(data.settings.month), 
+            status: data.settings.status 
+        };
     }
 }
 
-// ===== 4. 로그인 화면 =====
 async function showLoginScreen() {
-    document.body.innerHTML = `
+    document.getElementById('app').innerHTML = `
         <div class="login-screen">
             <div class="login-box">
-                <h2>주말 근무표</h2>
-                <p style="color:var(--text-muted); margin-bottom:24px; font-size:0.9rem;">이름 선택 후 입장하세요.</p>
-                <select id="login-employee"><option value="">이름 선택...</option></select>
-                <button class="btn btn-primary btn-full" onclick="loginAsEmployee()" style="margin-top:4px">직원 입장</button>
-                <div class="login-divider"><span>또는</span></div>
-                <input type="password" id="login-pin" placeholder="담당자 PIN 입력">
-                <button class="btn btn-outline btn-full" onclick="loginAsAdmin()">담당자 입장</button>
+                <h2 style="margin-bottom:8px">주말 근무 신청</h2>
+                <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:24px">성함을 선택하거나 관리자 PIN을 입력하세요.</p>
+                <select id="login-name" class="btn btn-outline btn-full" style="text-align:left; margin-bottom:10px;"><option value="">직원 선택...</option></select>
+                <button class="btn btn-primary btn-full" onclick="loginEmployee()">직원 로그인</button>
+                <div style="margin:20px 0; text-align:center; font-size:0.8rem; color:#cbd5e1">OR</div>
+                <input type="password" id="admin-pin" placeholder="관리자 PIN" class="btn btn-outline btn-full" style="text-align:left">
+                <button class="btn btn-outline btn-full" onclick="loginAdmin()">관리자 접속</button>
             </div>
-            <div id="login-loading" class="loading" style="display:none"><div class="spinner"></div> 로딩 중...</div>
-        </div>`;
-    
-    const loading = document.getElementById('login-loading');
-    if (loading) loading.style.display = 'flex';
-    try {
-        await loadAllData();
-        const select = document.getElementById('login-employee');
-        App.employees.forEach(name => {
-            const opt = document.createElement('option');
-            opt.value = name; opt.textContent = name;
-            select.appendChild(opt);
-        });
-    } finally {
-        if (loading) loading.style.display = 'none';
-    }
+        </div>
+    `;
+    await loadAllData();
+    const select = document.getElementById('login-name');
+    App.employees.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        select.appendChild(opt);
+    });
 }
 
-function loginAsEmployee() {
-    const name = document.getElementById('login-employee').value;
-    if (!name) return showToast('이름을 선택하세요.', 'error');
-    App.role = 'employee';
+function loginEmployee() {
+    const name = document.getElementById('login-name').value;
+    if (!name) return alert('이름을 선택해주세요.');
     App.currentUser = name;
+    App.role = 'employee';
     showEmployeeScreen();
 }
 
-function loginAsAdmin() {
-    const pin = document.getElementById('login-pin').value;
-    if (pin !== CONFIG.ADMIN_PIN) return showToast('PIN 오류', 'error');
+function loginAdmin() {
+    const pin = document.getElementById('admin-pin').value;
+    if (pin !== CONFIG.ADMIN_PIN) return alert('PIN 번호가 틀립니다.');
     App.role = 'admin';
     showAdminScreen();
 }
 
-// ===== 5. 직원 화면 (항상 빈 달력) =====
 async function showEmployeeScreen() {
-    document.body.innerHTML = `
-        <div class="header"><h1>주말 근무표</h1><div class="header-right"><span>${App.currentUser}님</span><button onclick="logout()">나가기</button></div></div>
-        <div class="container" id="emp-content"></div>`;
-
-    const container = document.getElementById('emp-content');
+    document.getElementById('app').innerHTML = `
+        <div class="header"><h3>${App.currentUser}님</h3><button class="btn btn-outline" onclick="location.reload()">로그아웃</button></div>
+        <div class="container" id="main-container"></div>
+    `;
+    const container = document.getElementById('main-container');
     if (App.settings.status === 'closed') {
-        container.innerHTML = '<div class="card" style="text-align:center; padding:50px;"><h3>신청 기간이 아닙니다.</h3></div>';
+        container.innerHTML = `<div class="card" style="text-align:center"><h3>지금은 신청 기간이 아닙니다.</h3></div>`;
         return;
     }
-    if (['confirmed', 'assigned'].includes(App.settings.status)) {
-        renderFinalSchedule(container);
+    if (App.settings.status === 'confirmed') {
+        showFinalSchedule(container);
         return;
     }
-    renderEmployeeApplication(container);
-}
 
-function renderEmployeeApplication(container) {
-    const { year, month } = App.settings;
-    const selectedDates = []; 
+    const selectedDates = [];
     window._selectedDates = selectedDates;
 
     container.innerHTML = `
         <div class="card">
-            <h3>${year}년 ${month}월 신청</h3>
-            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">
-                희망 날짜를 모두 선택하고 제출하세요.<br>
-                <span style="color:var(--danger); font-weight:bold;">* 제출 시 이전 내역은 현재 선택으로 대체됩니다.</span>
-            </p>
-            <div class="calendar" id="emp-calendar"></div>
-            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;">
-                <span id="selected-count" style="font-weight:bold;">선택: 0일</span>
-                <button class="btn btn-primary" onclick="submitApplication()">최종 제출</button>
-            </div>
-        </div>`;
-
-    renderCalendar('emp-calendar', year, month, selectedDates, (dateStr) => {
-        const idx = selectedDates.indexOf(dateStr);
-        idx >= 0 ? selectedDates.splice(idx, 1) : selectedDates.push(dateStr);
-        document.querySelectorAll('#emp-calendar .weekend').forEach(c => {
-            if (c.dataset.date === dateStr) c.classList.toggle('selected');
-        });
-        document.getElementById('selected-count').textContent = `선택: ${selectedDates.length}일`;
-    });
+            <h3>${App.settings.year}년 ${App.settings.month}월 신청</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:15px;">희망하는 주말을 모두 선택하세요.</p>
+            <div class="calendar" id="calendar-grid"></div>
+            <button class="btn btn-primary btn-full" style="margin-top:20px" onclick="submitRequest()">최종 제출하기</button>
+        </div>
+    `;
+    renderCalendar('calendar-grid', App.settings.year, App.settings.month, selectedDates);
 }
 
-async function submitApplication() {
-    if (!window._selectedDates.length) return showToast('날짜를 선택하세요.', 'error');
-    if (!confirm("이전 신청 내역이 초기화됩니다. 제출할까요?")) return;
+function renderCalendar(id, y, m, selected) {
+    const grid = document.getElementById(id);
+    const days = ['월','화','수','목','금','토','일'];
+    days.forEach(d => grid.innerHTML += `<div class="day-header">${d}</div>`);
+    
+    const firstDay = (new Date(y, m-1, 1).getDay() + 6) % 7;
+    const lastDate = new Date(y, m, 0).getDate();
+
+    for(let i=0; i<firstDay; i++) grid.innerHTML += `<div class="day-cell"></div>`;
+
+    for(let d=1; d<=lastDate; d++) {
+        const date = new Date(y, m-1, d);
+        const dateStr = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const isWeekend = [0, 6].includes(date.getDay());
+        const cell = document.createElement('div');
+        cell.className = `day-cell ${isWeekend ? 'weekend' : 'weekday'} ${date.getDay() === 0 ? 'sunday' : ''}`;
+        cell.textContent = d;
+        if(isWeekend) {
+            cell.onclick = () => {
+                cell.classList.toggle('selected');
+                const idx = selected.indexOf(dateStr);
+                idx > -1 ? selected.splice(idx, 1) : selected.push(dateStr);
+            };
+        }
+        grid.appendChild(cell);
+    }
+}
+
+async function submitRequest() {
+    if(!window._selectedDates.length) return alert('최소 하루 이상 선택해주세요.');
+    if(!confirm('기존 신청 내역이 초기화됩니다. 계속할까요?')) return;
+    
+    const btn = document.querySelector('.btn-primary');
+    btn.disabled = true;
+    btn.textContent = '저장 중... 잠시만 기다려주세요 ⏳';
+    
     try {
         await SheetsAPI.saveApplication({ name: App.currentUser, dates: window._selectedDates });
-        showToast('제출 완료!', 'success');
-        renderSubmitComplete(document.getElementById('emp-content'), window._selectedDates);
-    } catch (e) { showToast('실패', 'error'); }
+        alert('성공적으로 저장되었습니다.');
+        location.reload();
+    } catch(e) {
+        alert('저장에 실패했습니다. 다시 시도해주세요.');
+        btn.disabled = false;
+        btn.textContent = '최종 제출하기';
+    }
 }
 
-function renderSubmitComplete(container, dates) {
+function showFinalSchedule(container) {
+    const assignments = App.assignments || [];
+    if (assignments.length === 0) {
+        container.innerHTML = `<div class="card" style="text-align:center"><h3>아직 확정된 근무표가 없습니다.</h3></div>`;
+        return;
+    }
     container.innerHTML = `
-        <div class="card" style="text-align:center; padding:30px;">
-            <h3 style="color:var(--success)">제출 완료</h3>
-            <div class="table-wrap" style="max-width:250px; margin:20px auto;">
-                <table><thead><tr><th>날짜</th><th>요일</th></tr></thead>
-                <tbody>${dates.sort().map(d => `<tr><td>${new Date(d).getMonth()+1}/${new Date(d).getDate()}</td><td>${new Date(d).getDay()===0?'일':'토'}</td></tr>`).join('')}</tbody></table>
+        <div class="card">
+            <h3>${App.settings.year}년 ${App.settings.month}월 근무표</h3>
+            <div class="table-wrap" style="margin-top:15px;">
+                <table>
+                    <thead><tr><th>날짜</th><th>근무자</th></tr></thead>
+                    <tbody>
+                        ${assignments.map(a => `
+                            <tr>
+                                <td>${a.date}</td>
+                                <td>${a.name || '—'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
             </div>
-            <button class="btn btn-outline" style="margin-top:20px;" onclick="location.reload()">처음으로</button>
-        </div>`;
+        </div>
+    `;
 }
 
-function renderFinalSchedule(container) {
-    container.innerHTML = `<div class="card"><h3>${App.settings.year}년 ${App.settings.month}월 확정 근무표</h3><div class="table-wrap"><table><thead><tr><th>날짜</th><th>요일</th><th>근무자</th></tr></thead><tbody id="final-tbody"></tbody></table></div></div>`;
-    const tbody = document.getElementById('final-tbody');
-    getWeekends(App.settings.year, App.settings.month).forEach(d => {
-        const dateStr = formatDate(d);
-        const name = (App.assignments.find(a => a.date === dateStr) || {}).name || '-';
-        tbody.innerHTML += `<tr><td>${App.settings.month}/${d.getDate()}</td><td>${d.getDay()===0?'일':'토'}</td><td>${name}</td></tr>`;
-    });
-}
-
-// ===== 6. 담당자 화면 =====
 async function showAdminScreen() {
-    document.body.innerHTML = `<div class="header"><h1>운영자 모드</h1><div class="header-right"><button onclick="logout()">로그아웃</button></div></div><div class="container" id="admin-content"></div>`;
+    document.getElementById('app').innerHTML = `
+        <div class="header">
+            <h1>운영자 모드</h1>
+            <div class="header-right">
+                <button class="btn btn-outline" onclick="logout()">로그아웃</button>
+            </div>
+        </div>
+        <div class="container" id="admin-content">
+            <div class="loading"><div class="spinner"></div> 데이터를 불러오는 중...</div>
+        </div>
+    `;
+
     await loadAllData();
     const container = document.getElementById('admin-content');
+
     container.innerHTML = `
-        <div class="card" style="margin-bottom:20px;">
-            <h3>📅 시스템 설정</h3>
+        <div class="card">
+            <h3>📅 근무표 생성 설정</h3>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:15px;">
-                <div><label>연도</label><input type="number" id="set-year" value="${App.settings.year}" class="btn-full"></div>
-                <div><label>월</label><input type="number" id="set-month" value="${App.settings.month}" class="btn-full"></div>
+                <div>
+                    <label style="font-size:0.8rem; color:var(--text-muted);">연도</label>
+                    <input type="number" id="set-year" value="${App.settings.year}" class="btn btn-outline btn-full" style="text-align:left">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem; color:var(--text-muted);">월</label>
+                    <input type="number" id="set-month" value="${App.settings.month}" class="btn btn-outline btn-full" style="text-align:left">
+                </div>
             </div>
             <div style="margin-top:15px;">
-                <label>진행 상태</label>
-                <select id="set-status" class="btn-full">
-                    <option value="open" ${App.settings.status==='open'?'selected':''}>신청 중</option>
-                    <option value="closed" ${App.settings.status==='closed'?'selected':''}>신청 마감</option>
-                    <option value="confirmed" ${App.settings.status==='confirmed'?'selected':''}>확정 공지</option>
+                <label style="font-size:0.8rem; color:var(--text-muted);">진행 상태</label>
+                <select id="set-status" class="btn btn-outline btn-full" style="text-align:left">
+                    <option value="open" ${App.settings.status === 'open' ? 'selected' : ''}>신청 중 (직원 달력 활성화)</option>
+                    <option value="closed" ${App.settings.status === 'closed' ? 'selected' : ''}>신청 마감 (접근 불가)</option>
+                    <option value="confirmed" ${App.settings.status === 'confirmed' ? 'selected' : ''}>확정 및 공지 (결과 노출)</option>
                 </select>
             </div>
-            <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="updateSettings()">설정 저장</button>
+            <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="updateSettings()">설정 저장 및 적용</button>
         </div>
-        <div class="card"><h3>📊 신청 현황</h3><div class="table-wrap"><table><thead><tr><th>이름</th><th>신청일수</th></tr></thead><tbody>${App.employees.map(name => {
-            const count = App.applications.filter(a => a.name === name).length;
-            return `<tr><td>${name}</td><td>${count>0?count+'일':'미신청'}</td></tr>`;
-        }).join('')}</tbody></table></div></div>`;
+
+        <div class="card">
+            <h3>📊 실시간 신청 현황</h3>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">
+                총 ${App.employees.length}명 중 ${new Set(App.applications.map(a => a.name)).size}명 신청 완료
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>이름</th><th>신청 일수</th><th>상태</th></tr>
+                    </thead>
+                    <tbody>
+                        ${App.employees.map(name => {
+                            const count = App.applications.filter(a => a.name === name).length;
+                            return `
+                                <tr>
+                                    <td>${name}</td>
+                                    <td>${count}일</td>
+                                    <td>${count > 0 ? '<span style="color:var(--success)">완료</span>' : '<span style="color:var(--danger)">미신청</span>'}</td>
+                                </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="runAutoAssign()">자동 배치 실행</button>
+        </div>
+    `;
 }
 
 async function updateSettings() {
     const year = document.getElementById('set-year').value;
     const month = document.getElementById('set-month').value;
     const status = document.getElementById('set-status').value;
+
+    if (!confirm(`${year}년 ${month}월 설정을 저장하시겠습니까?`)) return;
+
     try {
-        await SheetsAPI.saveSettings({ year, month, status });
-        showToast('저장 완료', 'success');
-        location.reload();
-    } catch (e) { showToast('실패', 'error'); }
+        const res = await SheetsAPI.saveSettings({ year, month, status });
+        if(res.success) {
+            alert('설정이 성공적으로 저장되었습니다.');
+            location.reload();
+        }
+    } catch (e) {
+        alert('저장에 실패했습니다.');
+    }
 }
 
-// ===== 7. 달력 렌더러 =====
-function renderCalendar(id, y, m, sel, cb) {
-    const el = document.getElementById(id); if (!el) return; el.innerHTML = '';
-    ['월','화','수','목','금','토','일'].forEach(n => el.innerHTML += `<div class="day-header">${n}</div>`);
-    const first = (new Date(y, m - 1, 1).getDay() + 6) % 7;
-    for (let i = 0; i < first; i++) el.innerHTML += '<div class="day-cell empty"></div>';
-    for (let d = 1; d <= new Date(y, m, 0).getDate(); d++) {
-        const dt = new Date(y, m - 1, d), str = formatDate(dt), isWE = [0, 6].includes(dt.getDay());
-        const cell = document.createElement('div');
-        cell.className = `day-cell ${isWE ? 'weekend' : 'weekday'} ${sel.includes(str) ? 'selected' : ''}`;
-        if (isWE) {
-            cell.dataset.date = str; cell.onclick = () => cb(str);
-            if (dt.getDay() === 0) cell.classList.add('sunday');
+async function runAutoAssign() {
+    if (!confirm('자동 배치를 실행하시겠습니까?')) return;
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '배치 중... 잠시만 기다려주세요 ⏳';
+    try {
+        const res = await SheetsAPI.runAutoAssign();
+        if (res.success) {
+            alert('자동 배치가 완료되었습니다.');
+            location.reload();
+        } else {
+            alert('배치 중 오류가 발생했습니다: ' + (res.error || ''));
+            btn.disabled = false;
+            btn.textContent = '자동 배치 실행';
         }
-        cell.textContent = d; el.appendChild(cell);
+    } catch(e) {
+        alert('배치에 실패했습니다. 다시 시도해주세요.');
+        btn.disabled = false;
+        btn.textContent = '자동 배치 실행';
+    }
+}
+
+function logout() {
+    if(confirm('로그아웃 하시겠습니까?')) {
+        location.reload();
     }
 }
