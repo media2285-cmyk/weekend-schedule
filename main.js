@@ -4,7 +4,8 @@ const App = {
     employees: [],
     settings: { year: null, month: null, status: 'closed' },
     applications: [],
-    assignments: []
+    assignments: [],
+    history: []
 };
 
 document.addEventListener('DOMContentLoaded', () => showLoginScreen());
@@ -14,10 +15,12 @@ async function loadAllData() {
     if (data && !data.error) {
         App.employees = data.employees || [];
         App.applications = data.applications || [];
-        App.settings = { 
-            year: parseInt(data.settings.year), 
-            month: parseInt(data.settings.month), 
-            status: data.settings.status 
+        App.assignments = data.assignments || [];
+        App.history = data.history || [];
+        App.settings = {
+            year: parseInt(data.settings.year),
+            month: parseInt(data.settings.month),
+            status: data.settings.status
         };
     }
 }
@@ -94,7 +97,7 @@ function renderCalendar(id, y, m, selected) {
     const grid = document.getElementById(id);
     const days = ['월','화','수','목','금','토','일'];
     days.forEach(d => grid.innerHTML += `<div class="day-header">${d}</div>`);
-    
+
     const firstDay = (new Date(y, m-1, 1).getDay() + 6) % 7;
     const lastDate = new Date(y, m, 0).getDate();
 
@@ -137,11 +140,11 @@ function updateSelectedSummary(selected) {
 async function submitRequest() {
     if(!window._selectedDates.length) return alert('최소 하루 이상 선택해주세요.');
     if(!confirm('기존 신청 내역이 초기화됩니다. 계속할까요?')) return;
-    
+
     const btn = document.querySelector('.btn-primary');
     btn.disabled = true;
     btn.textContent = '저장 중... 잠시만 기다려주세요 ⏳';
-    
+
     try {
         await SheetsAPI.saveApplication({ name: App.currentUser, dates: window._selectedDates });
         alert('성공적으로 저장되었습니다.');
@@ -168,7 +171,7 @@ function showFinalSchedule(container) {
                     <tbody>
                         ${assignments.map(a => `
                             <tr>
-                                <td>${a.date}</td>
+                                <td>${formatDateKR(a.date)}</td>
                                 <td>${a.name || '—'}</td>
                             </tr>
                         `).join('')}
@@ -179,13 +182,18 @@ function showFinalSchedule(container) {
     `;
 }
 
+function formatDateKR(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const dow = ['일','월','화','수','목','금','토'][date.getDay()];
+    return `${date.getMonth()+1}/${date.getDate()}(${dow})`;
+}
+
 async function showAdminScreen() {
     document.getElementById('app').innerHTML = `
         <div class="header">
             <h1>운영자 모드</h1>
-            <div class="header-right">
-                <button class="btn btn-outline" onclick="logout()">로그아웃</button>
-            </div>
+            <button class="btn btn-outline" onclick="logout()">로그아웃</button>
         </div>
         <div class="container" id="admin-content">
             <div class="loading"><div class="spinner"></div> 데이터를 불러오는 중...</div>
@@ -193,8 +201,11 @@ async function showAdminScreen() {
     `;
 
     await loadAllData();
-    const container = document.getElementById('admin-content');
+    renderAdminScreen();
+}
 
+function renderAdminScreen() {
+    const container = document.getElementById('admin-content');
     container.innerHTML = `
         <div class="card">
             <h3>📅 근무표 생성 설정</h3>
@@ -226,24 +237,46 @@ async function showAdminScreen() {
             </p>
             <div class="table-wrap">
                 <table>
-                    <thead>
-                        <tr><th>이름</th><th>신청 일수</th><th>상태</th></tr>
-                    </thead>
+                    <thead><tr><th>이름</th><th>신청 일수</th><th>상태</th></tr></thead>
                     <tbody>
                         ${App.employees.map(name => {
                             const count = App.applications.filter(a => a.name === name).length;
-                            return `
-                                <tr>
-                                    <td>${name}</td>
-                                    <td>${count}일</td>
-                                    <td>${count > 0 ? '<span style="color:var(--success)">완료</span>' : '<span style="color:var(--danger)">미신청</span>'}</td>
-                                </tr>`;
+                            return `<tr>
+                                <td>${name}</td>
+                                <td>${count}일</td>
+                                <td>${count > 0 ? '<span style="color:var(--success)">완료</span>' : '<span style="color:var(--danger)">미신청</span>'}</td>
+                            </tr>`;
                         }).join('')}
                     </tbody>
                 </table>
             </div>
             <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="runAutoAssign()">자동 배치 실행</button>
         </div>
+
+        ${App.assignments.length > 0 ? `
+        <div class="card">
+            <h3>📋 배치 결과</h3>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">
+                공란은 신청자가 없는 날짜예요. 수동 조정에서 직접 지정할 수 있어요.
+            </p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>날짜</th><th>근무자</th><th>상태</th></tr></thead>
+                    <tbody>
+                        ${App.assignments.map(a => `
+                            <tr>
+                                <td>${formatDateKR(a.date)}</td>
+                                <td>${a.name || '—'}</td>
+                                <td>${a.name ? '<span style="color:var(--success)">배치 완료</span>' : '<span style="color:var(--danger)">공란</span>'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <button class="btn btn-outline btn-full" style="margin-top:20px;" onclick="showManualAdjust()">수동 조정</button>
+            <button class="btn btn-primary btn-full" style="margin-top:10px;" onclick="confirmAssign()">최종 확정</button>
+        </div>
+        ` : ''}
     `;
 }
 
@@ -251,9 +284,7 @@ async function updateSettings() {
     const year = document.getElementById('set-year').value;
     const month = document.getElementById('set-month').value;
     const status = document.getElementById('set-status').value;
-
     if (!confirm(`${year}년 ${month}월 설정을 저장하시겠습니까?`)) return;
-
     try {
         const res = await SheetsAPI.saveSettings({ year, month, status });
         if(res.success) {
@@ -284,6 +315,76 @@ async function runAutoAssign() {
         alert('배치에 실패했습니다. 다시 시도해주세요.');
         btn.disabled = false;
         btn.textContent = '자동 배치 실행';
+    }
+}
+
+function showManualAdjust() {
+    const container = document.getElementById('admin-content');
+    container.innerHTML = `
+        <div class="card">
+            <h3>✏️ 수동 조정</h3>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">각 날짜의 근무자를 직접 변경할 수 있어요.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>날짜</th><th>근무자</th></tr></thead>
+                    <tbody>
+                        ${App.assignments.map((a, i) => `
+                            <tr>
+                                <td>${formatDateKR(a.date)}</td>
+                                <td>
+                                    <select class="btn btn-outline" style="width:100%;" data-date="${a.date}" onchange="updateManualAssign(this)">
+                                        <option value="">— 공란 —</option>
+                                        ${App.employees.map(name =>
+                                            `<option value="${name}" ${a.name === name ? 'selected' : ''}>${name}</option>`
+                                        ).join('')}
+                                    </select>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <button class="btn btn-outline btn-full" style="margin-top:20px;" onclick="renderAdminScreen()">← 돌아가기</button>
+        </div>
+    `;
+}
+
+async function updateManualAssign(select) {
+    const date = select.dataset.date;
+    const name = select.value;
+    try {
+        await SheetsAPI.saveManualAssign({ date, name });
+        const assignment = App.assignments.find(a => a.date === date);
+        if (assignment) assignment.name = name;
+    } catch(e) {
+        alert('저장에 실패했습니다.');
+    }
+}
+
+async function confirmAssign() {
+    if (!confirm('최종 확정하시겠습니까? 근무 이력에 누적 저장됩니다.')) return;
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '확정 중... 잠시만 기다려주세요 ⏳';
+    try {
+        const res = await SheetsAPI.confirmAssign();
+        if (res.success) {
+            await SheetsAPI.saveSettings({
+                year: App.settings.year,
+                month: App.settings.month,
+                status: 'confirmed'
+            });
+            alert('최종 확정되었습니다. 직원들이 결과를 볼 수 있습니다.');
+            location.reload();
+        } else {
+            alert('확정 중 오류가 발생했습니다.');
+            btn.disabled = false;
+            btn.textContent = '최종 확정';
+        }
+    } catch(e) {
+        alert('확정에 실패했습니다.');
+        btn.disabled = false;
+        btn.textContent = '최종 확정';
     }
 }
 
