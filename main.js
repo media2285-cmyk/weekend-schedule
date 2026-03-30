@@ -46,6 +46,9 @@ async function showLoginScreen() {
         opt.value = name; opt.textContent = name;
         select.appendChild(opt);
     });
+    document.getElementById('admin-pin').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') loginAdmin();
+    });
 }
 
 function loginEmployee() {
@@ -199,7 +202,6 @@ async function showAdminScreen() {
             <div class="loading"><div class="spinner"></div> 데이터를 불러오는 중...</div>
         </div>
     `;
-
     await loadAllData();
     renderAdminScreen();
 }
@@ -250,7 +252,7 @@ function renderAdminScreen() {
                     </tbody>
                 </table>
             </div>
-            <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="runAutoAssign()">자동 배치 실행</button>
+            <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="runAutoAssign(event)">자동 배치 실행</button>
         </div>
 
         ${App.assignments.length > 0 ? `
@@ -274,7 +276,7 @@ function renderAdminScreen() {
                 </table>
             </div>
             <button class="btn btn-outline btn-full" style="margin-top:20px;" onclick="showManualAdjust()">수동 조정</button>
-            <button class="btn btn-primary btn-full" style="margin-top:10px;" onclick="confirmAssign()">최종 확정</button>
+            <button class="btn btn-primary btn-full" style="margin-top:10px;" onclick="confirmAssign(event)">최종 확정</button>
         </div>
         ` : ''}
     `;
@@ -296,7 +298,7 @@ async function updateSettings() {
     }
 }
 
-async function runAutoAssign() {
+async function runAutoAssign(event) {
     if (!confirm('자동 배치를 실행하시겠습니까?')) return;
     const btn = event.target;
     btn.disabled = true;
@@ -304,8 +306,9 @@ async function runAutoAssign() {
     try {
         const res = await SheetsAPI.runAutoAssign();
         if (res.success) {
+            await loadAllData();
+            renderAdminScreen();
             alert('자동 배치가 완료되었습니다.');
-            location.reload();
         } else {
             alert('배치 중 오류가 발생했습니다: ' + (res.error || ''));
             btn.disabled = false;
@@ -328,7 +331,7 @@ function showManualAdjust() {
                 <table>
                     <thead><tr><th>날짜</th><th>근무자</th></tr></thead>
                     <tbody>
-                        ${App.assignments.map((a, i) => `
+                        ${App.assignments.map(a => `
                             <tr>
                                 <td>${formatDateKR(a.date)}</td>
                                 <td>
@@ -344,7 +347,8 @@ function showManualAdjust() {
                     </tbody>
                 </table>
             </div>
-            <button class="btn btn-outline btn-full" style="margin-top:20px;" onclick="renderAdminScreen()">← 돌아가기</button>
+            <button class="btn btn-primary btn-full" style="margin-top:20px;" onclick="saveManualAndGoBack(event)">조정 완료</button>
+            <button class="btn btn-outline btn-full" style="margin-top:10px;" onclick="renderAdminScreen()">← 취소하고 돌아가기</button>
         </div>
     `;
 }
@@ -361,7 +365,16 @@ async function updateManualAssign(select) {
     }
 }
 
-async function confirmAssign() {
+async function saveManualAndGoBack(event) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '저장 중... 잠시만 기다려주세요 ⏳';
+    await loadAllData();
+    alert('수동 조정이 저장되었습니다.');
+    renderAdminScreen();
+}
+
+async function confirmAssign(event) {
     if (!confirm('최종 확정하시겠습니까? 근무 이력에 누적 저장됩니다.')) return;
     const btn = event.target;
     btn.disabled = true;
